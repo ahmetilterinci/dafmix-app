@@ -456,7 +456,7 @@ private fun RoomPanel(
                 }
             }
             Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (canEp) PanelBtn("Bölüm seç", onEpisodes)
+                if (canEp) PanelBtn("Bölüm seç", onClick = onEpisodes)
                 PanelBtn("Davet bağlantısını kopyala") {
                     val link = Svc.prefs.baseUrl + "/oda/" + rc.code
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -468,9 +468,9 @@ private fun RoomPanel(
                     PanelBtn(if (all) "Kontrol: herkes (kilitle)" else "Kontrol: sadece ben (herkese aç)") {
                         rc.post("settings", JSONObject().put("control", if (all) "host" else "all"))
                     }
-                    PanelBtn("Odayı kapat", onLeave, danger = true)
+                    PanelBtn("Odayı kapat", danger = true, onClick = onLeave)
                 } else {
-                    PanelBtn("Odadan çık", onLeave)
+                    PanelBtn("Odadan çık", onClick = onLeave)
                 }
             }
         }
@@ -478,7 +478,7 @@ private fun RoomPanel(
 }
 
 @Composable
-private fun PanelBtn(label: String, onClick: () -> Unit, danger: Boolean = false) {
+private fun PanelBtn(label: String, danger: Boolean = false, onClick: () -> Unit) {
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Panel2).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 14.dp),
     ) { Text(label, fontSize = 13.sp, color = if (danger) Red else Color.White, fontWeight = FontWeight.Bold) }
