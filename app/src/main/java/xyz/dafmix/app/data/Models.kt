@@ -23,7 +23,24 @@ data class Title(
     val top10: Int = 0,
     val textLogo: String = "",
     val pid: String = "",
+    val listThumb: String = "",
+    val soon: Boolean = false,
+    val soonText: String = "",
+    val newManual: Boolean = false,
+    val newOff: Boolean = false,
+    val newUntil: Long = 0L,
+    val added: Long = 0L,
+    val seasonBadge: Int = 0, // 1 Yeni Sezon, 2 Yeni Sezon Çok Yakında, 3 Yeni Bölümler
+    val seasonText: String = "",
+    val seasonCount: Int = 0,
 ) {
+    /** "Yeni" rozeti: elle işaretli (süresi dolmadıysa) ya da izlenebilir olduğu günden 14 gün içinde */
+    val isNew: Boolean get() {
+        if (soon || newOff) return false
+        val now = System.currentTimeMillis() / 1000
+        if (newManual && (newUntil == 0L || now < newUntil)) return true
+        return added > 0 && now - added < 14 * 86400
+    }
     val isMovie get() = type == "movie"
     val poster get() = if (topThumb.isNotBlank()) topThumb else thumb
     val typeLabel get() = when (type) { "movie" -> "Film"; "series" -> "Dizi"; else -> "Anime" }
@@ -40,11 +57,21 @@ data class Episode(
     val creditsStart: Double? = null,
 )
 
+data class Seri(val id: Int, val name: String, val slug: String, val desc: String, val poster: String, val banner: String, val items: List<Int>)
+
 data class Season(val number: Int, val episodes: List<Episode>)
 
 data class TitleDetail(val title: Title, val seasons: List<Season>)
 
-data class Source(val id: Int, val label: String, val url: String, val kind: String)
+data class Source(
+    val id: Int, val label: String, val url: String, val kind: String,
+    val audioUrl: String = "",            // videoyla birlikte çalınan ayrı ses dosyası (isteğe bağlı)
+    val introStart: Double? = null,       // kaynağa özel jenerik/intro zamanları (boşsa bölümün ortak değeri)
+    val introEnd: Double? = null,
+    val creditsStart: Double? = null,
+)
+
+data class SubTrack(val id: Int, val label: String, val lang: String, val url: String)
 
 data class Landing(val headline: String, val subline: String, val slogan: String, val videoUrl: String)
 
@@ -79,6 +106,16 @@ fun parseTitle(o: JSONObject): Title = Title(
     top10 = o.optInt("top10", 0),
     textLogo = o.str("text_logo"),
     pid = o.str("pid"),
+    listThumb = o.str("list_thumb"),
+    soon = o.optBoolean("soon", false),
+    soonText = o.str("soon_text"),
+    newManual = o.optBoolean("new_manual", false),
+    newOff = o.optBoolean("new_off", false),
+    newUntil = o.optLong("new_until", 0L),
+    added = o.optLong("added", 0L),
+    seasonBadge = o.optInt("season_badge", 0),
+    seasonText = o.str("season_text"),
+    seasonCount = o.optJSONArray("seasons")?.length() ?: 0,
 )
 
 fun parseDetail(o: JSONObject): TitleDetail {

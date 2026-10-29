@@ -221,6 +221,7 @@ fun PlayerScreen(onExit: () -> Unit) {
 
     val sources = remember { mutableStateOf<List<Source>>(emptyList()) }
     val curSrc = remember { mutableStateOf<Source?>(null) }
+    val subs = remember { mutableStateOf<List<xyz.dafmix.app.data.SubTrack>>(emptyList()) }
     val offlineMode = remember { mutableStateOf(false) }
     val failed = remember { mutableStateListOf<Int>() }
     val tracks = remember { mutableStateOf(Tracks.EMPTY) }
@@ -256,9 +257,25 @@ fun PlayerScreen(onExit: () -> Unit) {
     fun startSource(s: Source, start: Long) {
         val url = Svc.api.absolute(s.url)
         val hls = s.kind == "hls" || url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
-        val item = MediaItem.Builder().setUri(url).apply { if (hls) setMimeType(MimeTypes.APPLICATION_M3U8) }.build()
+        val builder = MediaItem.Builder().setUri(url).apply { if (hls) setMimeType(MimeTypes.APPLICATION_M3U8) }
+        if (subs.value.isNotEmpty()) {
+            builder.setSubtitleConfigurations(subs.value.map { st ->
+                MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(Svc.api.absolute(st.url)))
+                    .setMimeType(MimeTypes.TEXT_VTT)
+                    .setLanguage(st.lang.ifBlank { null })
+                    .setLabel(st.label.ifBlank { "Altyazı" })
+                    .build()
+            })
+        }
+        val item = builder.build()
         curSrc.value = s
-        player.setMediaSource(Dl.streamFactory.createMediaSource(item), start)
+        val video = Dl.streamFactory.createMediaSource(item)
+        // Ayrı ses dosyası varsa video ile birleştirilir (ör. sessiz 4K video + ayrı ses)
+        val merged: MediaSource = if (s.audioUrl.isNotBlank()) {
+            val audioItem = MediaItem.Builder().setUri(Svc.api.absolute(s.audioUrl)).build()
+            androidx.media3.exoplayer.source.MergingMediaSource(video, Dl.streamFactory.createMediaSource(audioItem))
+        } else video
+        player.setMediaSource(merged, start)
         player.prepare()
         player.playWhenReady = true
     }
@@ -370,7 +387,7 @@ fun PlayerScreen(onExit: () -> Unit) {
         val cur = Playback.queue.getOrNull(index)
         if (cur == null) { onExit(); return@LaunchedEffect }
         loading = true; error = null; showIntro = false; nextDismissed = false
-        failed.clear(); sources.value = emptyList(); curSrc.value = null; offlineMode.value = false
+        failed.clear(); subs.value = emptyList(); sources.value = emptyList(); curSrc.value = null; offlineMode.value = false
         try {
             val saved = Svc.prefs.getProgress(cur.contentId)
             val start = if (saved != null && saved.posMs > 5_000L && saved.fraction < 0.95f) saved.posMs else 0L
@@ -381,7 +398,9 @@ fun PlayerScreen(onExit: () -> Unit) {
                 player.prepare()
                 player.playWhenReady = true
             } else {
-                val list = Svc.api.sources(cur.titleId, if (cur.episodeId > 0) cur.episodeId else null)
+                val full = Svc.api.sourcesFull(cur.titleId, if (cur.episodeId > 0) cur.episodeId else null)
+                val list = full.first
+                subs.value = full.second
                 sources.value = list
                 val first = pickSource(list) ?: throw ApiException(404, "Bu içerik için kaynak bulunamadı")
                 startSource(first, start)
@@ -408,8 +427,10 @@ fun PlayerScreen(onExit: () -> Unit) {
             playing = player.isPlaying
             buffering = player.playbackState == Player.STATE_BUFFERING
             val cur = Playback.queue.getOrNull(indexState.value)
-            val a = cur?.introStart
-            val b = cur?.introEnd
+            val ss = curSrc.value
+            val own = ss != null && ss.introStart != null && ss.introEnd != null
+            val a = if (own) ss?.introStart else cur?.introStart
+            val b = if (own) ss?.introEnd else cur?.introEnd
             val posS = posMs / 1000.0
             showIntro = a != null && b != null && posS >= a && posS < b
             tick++
@@ -442,7 +463,7 @@ fun PlayerScreen(onExit: () -> Unit) {
 
     // Sonraki bölüm geri sayımı
     val hasNext = index + 1 < Playback.queue.size
-    val creditsAt = current?.creditsStart ?: if (durMs > 0L) durMs / 1000.0 - 45.0 else Double.MAX_VALUE
+    val creditsAt = curSrc.value?.creditsStart ?: current?.creditsStart ?: if (durMs > 0L) durMs / 1000.0 - 45.0 else Double.MAX_VALUE
     val nextVisible = hasNext && !nextDismissed && durMs > 0L && posMs / 1000.0 >= creditsAt && error == null
     LaunchedEffect(nextVisible, autoNext) {
         countdown.snapTo(0f)
@@ -678,7 +699,8 @@ fun PlayerScreen(onExit: () -> Unit) {
                 horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (showIntro) {
-                    val to = current?.introEnd
+                    val srcNow = curSrc.value
+                    val to: Double? = if (srcNow?.introStart != null && srcNow.introEnd != null) srcNow.introEnd else current?.introEnd
                     Button(
                         onClick = { if (to != null) player.seekTo((to * 1000).toLong()) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xCC000000), contentColor = Color.White),

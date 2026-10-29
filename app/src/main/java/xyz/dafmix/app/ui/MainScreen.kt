@@ -82,7 +82,7 @@ import java.io.File
 import java.util.Locale
 
 @Composable
-fun MainScreen(openTitle: (Int) -> Unit, openPlayer: () -> Unit, changeProfile: () -> Unit, logout: () -> Unit, openBirlikte: () -> Unit = {}) {
+fun MainScreen(openTitle: (Int) -> Unit, openPlayer: () -> Unit, changeProfile: () -> Unit, logout: () -> Unit, openBirlikte: () -> Unit = {}, openSeries: (Int) -> Unit = {}) {
     val online by Svc.online.collectAsState()
     var tab by rememberSaveable { mutableStateOf(if (Svc.online.value) 0 else 2) }
     var catalog by remember { mutableStateOf(Svc.api.cachedCatalog()) }
@@ -118,7 +118,7 @@ fun MainScreen(openTitle: (Int) -> Unit, openPlayer: () -> Unit, changeProfile: 
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
-                0 -> HomeTab(catalog, online, openTitle, goDownloads = { tab = 2 }, openSearch = { tab = 1 }, openProfile = { tab = 3 })
+                0 -> HomeTab(catalog, online, openTitle, goDownloads = { tab = 2 }, openSearch = { tab = 1 }, openProfile = { tab = 3 }, openSeries = openSeries)
                 1 -> SearchTab(catalog, openTitle)
                 2 -> DownloadsTab(openPlayer)
                 else -> ProfileTab(changeProfile, logout, goDownloads = { tab = 2 }, openBirlikte = openBirlikte)

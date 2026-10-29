@@ -68,6 +68,7 @@ fun AppNav() {
                 changeProfile = { nav.navigate("profiles") },
                 logout = logout,
                 openBirlikte = { nav.navigate("birlikte") },
+                openSeries = { nav.navigate("series/$it") },
             )
         }
         composable("detail/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { entry ->
@@ -77,6 +78,9 @@ fun AppNav() {
                 openPlayer = { nav.navigate("player") },
                 openTitle = { nav.navigate("detail/$it") },
             )
+        }
+        composable("series/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { entry ->
+            SeriesScreen(id = entry.arguments?.getInt("id") ?: 0, back = { nav.popBackStack() }, openTitle = { nav.navigate("detail/$it") })
         }
         composable("birlikte") {
             BirlikteScreen(onBack = { nav.popBackStack() }, openRoom = { nav.navigate("room/$it") })

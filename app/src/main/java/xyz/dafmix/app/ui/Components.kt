@@ -65,6 +65,27 @@ fun fmtBytes(b: Long): String {
     return "%.2f GB".format(mb / 1024.0)
 }
 
+/** Kart köşesindeki rozet: Yakında / Yeni Sezon (Çok Yakında) / Yeni Bölümler / Yeni */
+@Composable
+fun TitleBadge(t: Title, modifier: Modifier = Modifier) {
+    val (label, sub, brush) = when {
+        t.soon -> Triple("YAKINDA", t.soonText, listOf(Color(0xFFF5B301), Color(0xFFFF7A00)))
+        t.seasonBadge == 2 -> Triple("YENİ SEZON ÇOK YAKINDA", t.seasonText, listOf(Color(0xFF8B5CF6), Color(0xFF6366F1)))
+        t.seasonBadge == 3 -> Triple("YENİ BÖLÜMLER", "", listOf(Color(0xFF22C55E), Color(0xFF16A34A)))
+        t.seasonBadge == 1 -> Triple("YENİ SEZON", "", listOf(Color(0xFF8B5CF6), Color(0xFF6366F1)))
+        t.isNew -> Triple("YENİ", "", listOf(Red, Red))
+        else -> return
+    }
+    val dark = t.soon
+    Column(
+        modifier.padding(6.dp).clip(RoundedCornerShape(4.dp)).background(androidx.compose.ui.graphics.Brush.linearGradient(brush))
+            .padding(horizontal = 6.dp, vertical = 3.dp)
+    ) {
+        Text(label, fontSize = 8.5.sp, lineHeight = 10.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Black, color = if (dark) Color(0xFF111111) else Color.White)
+        if (sub.isNotBlank()) Text(sub, fontSize = 8.sp, lineHeight = 9.sp, color = if (dark) Color(0xCC111111) else Color(0xE6FFFFFF))
+    }
+}
+
 @Composable
 fun PosterCard(t: Title, onClick: () -> Unit, width: Dp = 118.dp, progress: Float? = null, showTitle: Boolean = true) {
     Column(Modifier.width(width).clickable(onClick = onClick)) {
@@ -77,6 +98,7 @@ fun PosterCard(t: Title, onClick: () -> Unit, width: Dp = 118.dp, progress: Floa
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
             )
+            TitleBadge(t, Modifier.align(Alignment.TopStart))
             if (progress != null && progress > 0f) {
                 LinearProgressIndicator(
                     progress = progress,

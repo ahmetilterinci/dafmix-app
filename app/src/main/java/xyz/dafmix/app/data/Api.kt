@@ -11,6 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
+
 class ApiException(val status: Int, message: String, val code: String = "") : Exception(message)
 class OfflineException : IOException("İnternet bağlantısı yok")
 
@@ -120,15 +121,35 @@ class Api(private val client: OkHttpClient, private val prefs: Prefs) {
         return (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let(::parseTitle) }
     }
 
-    suspend fun detail(id: Int): TitleDetail = parseDetail(JSONObject(raw("GET", "/titles/$id")))
-
-    suspend fun sources(titleId: Int, episodeId: Int?): List<Source> {
-        val q = if (episodeId != null) "?episode=$episodeId" else ""
-        val arr = JSONObject(raw("GET", "/titles/$titleId/sources$q")).optJSONArray("sources") ?: JSONArray()
+    /** Yayındaki seriler (koleksiyonlar); içerik kimlikleri sıralıdır */
+    suspend fun collections(): List<Seri> {
+        val arr = JSONObject(raw("GET", "/collections")).optJSONArray("collections") ?: JSONArray()
         return (0 until arr.length()).mapNotNull { i ->
             val o = arr.optJSONObject(i) ?: return@mapNotNull null
-            Source(o.optInt("id"), o.str("label"), o.str("url"), o.str("kind"))
+            val ids = o.optJSONArray("items")?.let { a2 -> (0 until a2.length()).map { a2.optInt(it) } } ?: emptyList()
+            Seri(o.optInt("id"), o.str("name"), o.str("slug"), o.str("desc"), o.str("poster"), o.str("banner"), ids)
         }
+    }
+
+    suspend fun detail(id: Int): TitleDetail = parseDetail(JSONObject(raw("GET", "/titles/$id")))
+
+    suspend fun sources(titleId: Int, episodeId: Int?): List<Source> = sourcesFull(titleId, episodeId).first
+
+    /** (kaynaklar, harici altyazılar) */
+    suspend fun sourcesFull(titleId: Int, episodeId: Int?): Pair<List<Source>, List<SubTrack>> {
+        val q = if (episodeId != null) "?episode=$episodeId" else ""
+        val root = JSONObject(raw("GET", "/titles/$titleId/sources$q"))
+        val arr = root.optJSONArray("sources") ?: JSONArray()
+        val src = (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            Source(o.optInt("id"), o.str("label"), o.str("url"), o.str("kind"), o.str("audio_url"), o.dbl("intro_start"), o.dbl("intro_end"), o.dbl("credits_start"))
+        }
+        val sa = root.optJSONArray("subtitles") ?: JSONArray()
+        val subs = (0 until sa.length()).mapNotNull { i ->
+            val o = sa.optJSONObject(i) ?: return@mapNotNull null
+            SubTrack(o.optInt("id"), o.str("label"), o.str("lang"), o.str("url"))
+        }
+        return src to subs
     }
 
     /* ---------------- Birlikte İzle ---------------- */

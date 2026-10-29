@@ -102,62 +102,10 @@ val LogoIcon: ImageVector = ImageVector.Builder(
     strokeLineCap = StrokeCap.Round,
 ).build()
 
-private data class HomeRow(val name: String, val items: List<Title>, val kind: Int) // 0 afiş, 1 devam, 2 top10
-
 private fun latestFraction(titleId: Int): Float? {
     val p = Svc.prefs.allProgress().filter { it.contentId == "t$titleId" || it.contentId.startsWith("e${titleId}_") }
         .maxByOrNull { it.ts }
     return p?.fraction
-}
-
-private fun buildRows(data: List<Title>, page: Int): List<HomeRow> {
-    val rnd = Random(System.nanoTime())
-    val out = ArrayList<HomeRow>()
-
-    // 1) İzlemeye devam et (en yeni en solda)
-    val seen = LinkedHashSet<Int>()
-    for (p in Svc.prefs.allProgress().sortedByDescending { it.ts }) {
-        if (p.fraction >= 0.95f || p.posMs < 10_000) continue
-        val id = if (p.contentId.startsWith("t")) p.contentId.drop(1).toIntOrNull()
-        else p.contentId.drop(1).substringBefore('_').toIntOrNull()
-        if (id != null) seen.add(id)
-    }
-    val cont = seen.mapNotNull { id -> data.firstOrNull { it.id == id } }
-    if (cont.isNotEmpty()) out.add(HomeRow("İzlemeye Devam Et", cont, 1))
-
-    // 2) Diğer satırlar (listeler + etiketler), karışık
-    val cand = ArrayList<HomeRow>()
-    cand.add(HomeRow("Yeni Eklenenler", data.sortedByDescending { it.id }.take(24), 0))
-    for (l in data.flatMap { it.lists }.distinct()) {
-        val items = data.filter { l in it.lists }
-        if (items.size >= 3) cand.add(HomeRow(l, items.shuffled(rnd).take(24), 0))
-    }
-    val tagCounts = data.flatMap { it.tags }.groupingBy { it }.eachCount()
-    for ((g, n) in tagCounts) {
-        if (n < 4) continue
-        cand.add(HomeRow("Popüler $g Yapımları", data.filter { g in it.tags }.shuffled(rnd).take(24), 0))
-    }
-    val first = cand.first()
-    val rest = ArrayList<HomeRow>()
-    rest.add(first)
-    rest.addAll(cand.drop(1).shuffled(rnd))
-    val body = rest.distinctBy { it.name }.take(14)
-
-    // 3) Top 10 satırları (siteyle aynı: 3 satırda bir araya girer)
-    val tops = ArrayList<HomeRow>()
-    val types = if (page == 0) listOf("series", "movie", "anime") else listOf(PAGES[page].second)
-    for (ty in types) {
-        val items = data.filter { it.type == ty && it.top10 > 0 }.sortedBy { it.top10 }
-        if (items.isNotEmpty()) tops.add(HomeRow("Türkiye'de Bugün Top 10 ${TYPE_LABEL[ty]} Listesi", items, 2))
-    }
-    val merged = ArrayList<HomeRow>(body)
-    var at = 1
-    for (tp in tops) {
-        merged.add(minOf(at, merged.size), tp)
-        at = minOf(at, merged.size - 1) + 3
-    }
-    out.addAll(merged)
-    return out
 }
 
 /* ------------------------------------------------------------------ Ana sayfa */
@@ -165,11 +113,12 @@ private fun buildRows(data: List<Title>, page: Int): List<HomeRow> {
 fun HomeTab(
     catalog: List<Title>, online: Boolean, openTitle: (Int) -> Unit,
     goDownloads: () -> Unit, openSearch: () -> Unit, openProfile: () -> Unit,
+    openSeries: (Int) -> Unit = {},
 ) {
     var page by rememberSaveable { mutableIntStateOf(0) }
     var tag by rememberSaveable { mutableStateOf("") }
 
-    val playable = remember(catalog) { catalog.filter { it.playable } }
+    val playable = remember(catalog) { catalog.filter { it.playable && !it.soon } }
     val data = remember(playable, page) { if (page == 0) playable else playable.filter { it.type == PAGES[page].second } }
     val tags = remember(data) {
         data.flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(20).map { it.key }
@@ -178,12 +127,17 @@ fun HomeTab(
         val withPoster = data.filter { it.topThumb.isNotBlank() }
         (if (withPoster.size >= 3) withPoster else data).shuffled().take(6)
     }
-    val rows = remember(data, page) { buildRows(data, page) }
+    var series by remember { mutableStateOf<List<xyz.dafmix.app.data.Seri>>(emptyList()) }
+    LaunchedEffect(online, catalog.size) {
+        if (online) { try { series = Svc.api.collections() } catch (e: Exception) { } }
+    }
+    val validSeries = remember(series, data) { series.filter { s -> s.items.any { id -> data.any { it.id == id } } } }
+    val rows = remember(data, page, validSeries) { buildRows(data, catalog, page, validSeries, PAGES[page].second) }
     val favs by Favs.ids.collectAsState()
     val favItems = remember(data, favs) { data.filter { it.id in favs } }
     val shownRows = remember(rows, favItems) {
         val l = rows.toMutableList()
-        if (favItems.isNotEmpty()) l.add(if (l.firstOrNull()?.kind == 1) 1 else 0, HomeRow("Listem", favItems, 0))
+        if (favItems.isNotEmpty()) l.add(l.takeWhile { it.kind == 1 || it.kind == 3 }.size, HomeRow("Listem", favItems, 0))
         l
     }
 
@@ -299,6 +253,7 @@ fun HomeTab(
                     item(key = "row_" + row.name) {
                         Column(Modifier.padding(bottom = 22.dp)) {
                             RowTitle(row.name)
+                            if (row.kind == 3) SeriesRail(row.series, data, openSeries) else
                             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(if (row.kind == 2) 6.dp else 8.dp)) {
                                 items(row.items, key = { it.id }) { t ->
                                     when (row.kind) {
@@ -367,7 +322,7 @@ private fun NotificationList(items: List<Notif>, onOpen: (Notif) -> Unit, onRead
                 Modifier.fillMaxWidth().clickable { onOpen(n) }.background(if (n.read) Color.Transparent else Color(0x14FFFFFF)).padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.width(96.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(6.dp)).background(Panel2)) {
+                Box(Modifier.width(54.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(6.dp)).background(Panel2)) {
                     if (n.image.isNotBlank()) {
                         AsyncImage(Svc.api.img(n.image, 320), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     }
@@ -561,5 +516,24 @@ private fun Top10Card(t: Title, onClick: () -> Unit) {
             modifier = Modifier.align(Alignment.BottomEnd).width(posterW).height(168.dp)
                 .clip(RoundedCornerShape(8.dp)).background(Panel2),
         )
+    }
+}
+
+
+/* ------------------------------------------------------------------ Serileri Keşfet */
+@Composable
+private fun SeriesRail(series: List<xyz.dafmix.app.data.Seri>, data: List<Title>, onOpen: (Int) -> Unit) {
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(series, key = { it.id }) { s ->
+            val img = s.poster.ifBlank { data.firstOrNull { it.id == s.items.firstOrNull() }?.poster.orEmpty() }
+            Box(Modifier.width(132.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp)).background(Panel2).clickable { onOpen(s.id) }) {
+                if (img.isNotBlank()) AsyncImage(Svc.api.img(img, 480), s.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to Color(0xDD000000))))
+                Column(Modifier.align(Alignment.BottomStart).padding(8.dp)) {
+                    Text(s.name, fontSize = 13.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("${s.items.size} içerik", fontSize = 10.sp, color = Color(0xFFCCCCCC))
+                }
+            }
+        }
     }
 }
