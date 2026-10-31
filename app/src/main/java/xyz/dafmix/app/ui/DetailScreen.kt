@@ -193,11 +193,15 @@ fun DetailScreen(id: Int, back: () -> Unit, openPlayer: () -> Unit, openTitle: (
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                         val bdH = maxWidth * 9f / 16f
                         val posterW = maxWidth * 0.31f
-                        AsyncImage(
-                            model = Svc.api.img(title.thumb.ifBlank { title.topThumb }, 1080),
-                            contentDescription = null, contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(bdH),
-                        )
+                        // Banner: 2. yatay görsel (liste kapağı) varsa o, yoksa normal banner. Afiş (poster) banner yerine kullanılmaz.
+                        val banner = title.listThumb.ifBlank { title.thumb }
+                        if (banner.isNotBlank()) {
+                            AsyncImage(
+                                model = Svc.api.img(banner, 1080),
+                                contentDescription = null, contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxWidth().height(bdH),
+                            )
+                        } else Box(Modifier.fillMaxWidth().height(bdH).background(Panel2))
                         Box(
                             Modifier.fillMaxWidth().height(bdH).background(
                                 Brush.verticalGradient(0f to Color(0x99000000), 0.35f to Color.Transparent, 0.7f to Color(0x8C141414), 1f to Bg)

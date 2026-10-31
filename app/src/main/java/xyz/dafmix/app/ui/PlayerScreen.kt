@@ -188,6 +188,12 @@ fun PlayerScreen(onExit: () -> Unit) {
     var locked by remember { mutableStateOf(false) }
     var lockHint by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<String?>(null) }
+    // Altyazı görünümü (kalıcı); değişince PlayerView'daki SubtitleView yeniden biçimlenir
+    var subSize by remember { mutableFloatStateOf(Svc.prefs.subSize) }
+    var subColor by remember { mutableIntStateOf(Svc.prefs.subColor) }
+    var subBg by remember { mutableIntStateOf(Svc.prefs.subBg) }
+    var subEdge by remember { mutableIntStateOf(Svc.prefs.subEdge) }
+    var subPos by remember { mutableIntStateOf(Svc.prefs.subPos) }
     var inPip by remember { mutableStateOf(false) }
 
     var speed by remember { mutableFloatStateOf(1f) }
@@ -492,7 +498,20 @@ fun PlayerScreen(onExit: () -> Unit) {
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
                 }
             },
-            update = { it.resizeMode = RESIZE_MODES[resize.coerceIn(0, 2)] },
+            update = { pv ->
+                pv.resizeMode = RESIZE_MODES[resize.coerceIn(0, 2)]
+                pv.subtitleView?.let { sv ->
+                    sv.setApplyEmbeddedStyles(false)
+                    sv.setApplyEmbeddedFontSizes(false)
+                    sv.setFractionalTextSize(0.0533f * subSize)
+                    sv.setBottomPaddingFraction(when (subPos) { 0 -> 0.04f; 1 -> 0.11f; else -> 0.22f })
+                    val bgAlpha = when (subBg) { 0 -> 0; 1 -> 115; 2 -> 205; else -> 255 }
+                    val edge = when (subEdge) { 1 -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW; 2 -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE; else -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE }
+                    sv.setStyle(androidx.media3.ui.CaptionStyleCompat(subColor, android.graphics.Color.argb(bgAlpha, 0, 0, 0), android.graphics.Color.TRANSPARENT, edge, android.graphics.Color.BLACK, null))
+                    val padH = (pv.resources.displayMetrics.widthPixels * 0.06f).toInt() // satırlar kenara yapışmasın, yatay yayılsın
+                    sv.setPadding(padH, 0, padH, 0)
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -803,12 +822,56 @@ fun PlayerScreen(onExit: () -> Unit) {
                             panel = null
                         }
                     }
+                    if (texts.isNotEmpty()) PanelRow("Altyazı ayarları", selected = false, sub = "Boyut, renk, arka plan, kenar, konum") { panel = "substyle" }
                     if (audios.isNotEmpty()) {
                         PanelTitle("Ses")
                         for (o in audios) PanelRow(o.label, selected = o.selected) {
                             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                                 .setOverrideForType(TrackSelectionOverride(o.group.mediaTrackGroup, o.idx)).build()
                             panel = null
+                        }
+                    }
+                }
+                "substyle" -> {
+                    Row(Modifier.fillMaxWidth().clickable { panel = "tracks" }.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.ArrowBack, null, modifier = Modifier.size(20.dp))
+                        Text("Altyazı ayarları", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+                    }
+                    val sizes = listOf(0.7f, 0.85f, 1f, 1.25f, 1.5f, 1.85f, 2.3f)
+                    val si = sizes.indexOfFirst { it >= subSize - 0.001f }.let { if (it < 0) sizes.lastIndex else it }
+                    PanelSub("Boyut")
+                    Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StylePill("A−", false) { subSize = sizes[(si - 1).coerceAtLeast(0)]; Svc.prefs.subSize = subSize }
+                        Text("%${(sizes[si] * 100).toInt()}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        StylePill("A+", false) { subSize = sizes[(si + 1).coerceAtMost(sizes.lastIndex)]; Svc.prefs.subSize = subSize }
+                    }
+                    PanelSub("Renk")
+                    Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        for (c in listOf(0xFFFFFFFF, 0xFFFFE066, 0xFF7FD8FF, 0xFF8FF08F, 0xFFFF9FC4)) {
+                            val ci = c.toInt()
+                            Box(
+                                Modifier.size(32.dp).clip(CircleShape).background(Color(ci))
+                                    .clickable { subColor = ci; Svc.prefs.subColor = ci },
+                                contentAlignment = Alignment.Center,
+                            ) { if (subColor == ci) Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp)) }
+                        }
+                    }
+                    PanelSub("Arka plan")
+                    Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Yok", "Hafif", "Koyu", "Siyah").forEachIndexed { i, l -> StylePill(l, subBg == i) { subBg = i; Svc.prefs.subBg = i } }
+                    }
+                    PanelSub("Kenar")
+                    Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Yok", "Gölge", "Kontur").forEachIndexed { i, l -> StylePill(l, subEdge == i) { subEdge = i; Svc.prefs.subEdge = i } }
+                    }
+                    PanelSub("Konum")
+                    Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Aşağı", "Orta", "Yukarı").forEachIndexed { i, l -> StylePill(l, subPos == i) { subPos = i; Svc.prefs.subPos = i } }
+                    }
+                    Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                        StylePill("Varsayılana dön", false) {
+                            Svc.prefs.resetSubStyle()
+                            subSize = Svc.prefs.subSize; subColor = Svc.prefs.subColor; subBg = Svc.prefs.subBg; subEdge = Svc.prefs.subEdge; subPos = Svc.prefs.subPos
                         }
                     }
                 }
@@ -929,6 +992,14 @@ private fun SidePanel(visible: Boolean, onClose: () -> Unit, content: @Composabl
             }
         }
     }
+}
+
+@Composable
+private fun StylePill(text: String, on: Boolean, onClick: () -> Unit) {
+    Text(
+        text, fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) Color.White else Color(0xFFDDDDDD),
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) Red else Color(0xFF2A2A2E)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }
 
 @Composable

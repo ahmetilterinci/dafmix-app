@@ -153,7 +153,17 @@ internal fun buildRows(data: List<Title>, all: List<Title>, page: Int, series: L
         if (overlapping && !c.personal) continue
         chosen.add(c); usedSets.add(ids)
     }
-    val body = ArrayList<HomeRow>(chosen.map { HomeRow(it.name, it.items, 0) })
+    // Sitedeki yeni öneri motoru (ruh hâli, seri grupları, bölge, gizli hazineler…). Yetersiz kalırsa eski satırlar tamamlar.
+    val favNow = xyz.dafmix.app.data.Favs.ids.value
+    val lead = out.size + (if (data.any { it.id in favNow }) 1 else 0)
+    val smart = try {
+        Recommend.homeRows(data, watched.toList().reversed(), favNow.toList(), maxOf(10, 18 - lead), setOf("Yeni Eklenenler"))
+    } catch (e: Exception) { emptyList() }
+    val body = ArrayList<HomeRow>(smart.map { HomeRow(it.title, it.items, 0) })
+    if (body.size < 8) {
+        val have = body.map { it.name }.toMutableSet()
+        for (c in chosen) if (body.size < 12 && have.add(c.name)) body.add(HomeRow(c.name, c.items, 0))
+    }
 
     // Yakında Gelecekler / Yeni Eklenenler: her açılışta ayrı ayrı %25, yeri şansa bağlı
     val soonItems = all.filter { it.soon && (page == 0 || it.type == pageType) }

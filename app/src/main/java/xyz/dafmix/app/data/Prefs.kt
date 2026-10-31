@@ -8,6 +8,12 @@ data class Progress(val contentId: String, val posMs: Long, val durMs: Long, val
     val fraction: Float get() = if (durMs > 0) (posMs.toFloat() / durMs).coerceIn(0f, 1f) else 0f
 }
 
+const val SUB_DEF_SIZE = 1.25f
+const val SUB_DEF_COLOR = 0xFFFFFFFF.toInt()
+const val SUB_DEF_BG = 0
+const val SUB_DEF_EDGE = 2
+const val SUB_DEF_POS = 1
+
 class Prefs(ctx: Context) {
     private val sp = ctx.getSharedPreferences("dafmix", Context.MODE_PRIVATE)
     private val prog = ctx.getSharedPreferences("dafmix_progress", Context.MODE_PRIVATE)
@@ -51,6 +57,29 @@ class Prefs(ctx: Context) {
     var resizeMode: Int
         get() = sp.getInt("resize_mode", 0)
         set(v) { sp.edit().putInt("resize_mode", v).apply() }
+
+    /* Altyazı görünümü (site oynatıcısındaki "Altyazı ayarları" ile aynı seçenekler) */
+    var subSize: Float
+        get() = sp.getFloat("sub_size", SUB_DEF_SIZE)
+        set(v) { sp.edit().putFloat("sub_size", v).apply() }
+    var subColor: Int
+        get() = sp.getInt("sub_color", SUB_DEF_COLOR)
+        set(v) { sp.edit().putInt("sub_color", v).apply() }
+    /** Arka plan koyuluğu: 0 yok, 1 hafif, 2 koyu, 3 siyah */
+    var subBg: Int
+        get() = sp.getInt("sub_bg", SUB_DEF_BG)
+        set(v) { sp.edit().putInt("sub_bg", v).apply() }
+    /** Kenar: 0 yok, 1 gölge, 2 kontur */
+    var subEdge: Int
+        get() = sp.getInt("sub_edge", SUB_DEF_EDGE)
+        set(v) { sp.edit().putInt("sub_edge", v).apply() }
+    /** Konum: 0 aşağı, 1 orta, 2 yukarı */
+    var subPos: Int
+        get() = sp.getInt("sub_pos", SUB_DEF_POS)
+        set(v) { sp.edit().putInt("sub_pos", v).apply() }
+    fun resetSubStyle() {
+        sp.edit().remove("sub_size").remove("sub_color").remove("sub_bg").remove("sub_edge").remove("sub_pos").apply()
+    }
 
     fun getStr(key: String): String = sp.getString(key, "") ?: ""
     fun putStr(key: String, v: String) { sp.edit().putString(key, v).apply() }
